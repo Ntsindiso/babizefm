@@ -1,9 +1,9 @@
-name: 24/7 Babize FM Scheduled Stream
+name: 24/7 Babize FM - Time-Aware Automation
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */1 * * *'
+    - cron: '0 */6 * * *' # The necessary GitHub reset
 
 jobs:
   stream:
@@ -17,45 +17,51 @@ jobs:
 
       - name: Start Scheduled Streaming
         run: |
-          # 1. Get South African Time (UTC+2)
-          HOUR=$(date -u -d "+2 hours" +%H)
-          echo "Current SA Hour: $HOUR"
-
-          # 2. Match your Capitalized Folders
-          if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
-            FOLDER="./Music/Morning"
-          elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
-            FOLDER="./Music/Midday"
-          else
-            FOLDER="./Music/Night"
-          fi
-
-          echo "Target Folder: $FOLDER"
-
-          # 3. Validation Check
-          if [ ! -d "$FOLDER" ]; then
-            echo "ERROR: Folder $FOLDER not found! Checking alternative..."
-            # Fallback to main Music folder if subfolder is missing
-            FOLDER="./Music"
-          fi
-
-          # 4. Infinite Loop to prevent "Success" shutdowns
+          # Infinite Loop
           while true; do
-            # find all .mp3 or .MP3 files
+            # 1. Look up SA Time (UTC+2)
+            HOUR=$(date -u -d "+2 hours" +%H)
+            echo "Current SA Hour: $HOUR"
+
+            # 2. Pick the matching capitalized folder
+            if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
+              FOLDER="./Music/Morning"
+            elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
+              FOLDER="./Music/Midday"
+            else
+              FOLDER="./Music/Night"
+            fi
+
+            echo "Airing Vibe from: $FOLDER"
+
+            # 3. Find and shuffle the playlist for this vibe
             find "$FOLDER" -iname "*.mp3" > playlist.txt
             
             if [ ! -s playlist.txt ]; then
-              echo "ERROR: No music found in $FOLDER. Stopping."
-              exit 1
+              echo "ERROR: No music found in $FOLDER. Checking root Music folder."
+              find "./Music" -iname "*.mp3" > playlist.txt
             fi
 
             shuf playlist.txt -o playlist.txt
 
+            # 4. Stream 5 songs from the vibe, then play a jingle and re-check time
+            TRACK_COUNT=0
             while IFS= read -r line; do
-              echo "Now Airing: $line"
-              # The streaming command
+              # Break after 5 tracks to re-evaluate the time slot
+              if [ $TRACK_COUNT -ge 5 ]; then
+                break
+              fi
+
+              # Optional: Uncomment these lines if you have a Jingle folder
+              # echo "Airing Babize ID Jingle"
+              # JINGLE=$(find "./Jingles" -iname "*.mp3" | shuf -n 1)
+              # ffmpeg -re -i "$JINGLE" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
+
+              echo "Airing Track: $line"
               ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
+              
+              TRACK_COUNT=$((TRACK_COUNT+1))
             done < playlist.txt
             
-            echo "Restarting playlist for $FOLDER..."
+            echo "Vibe check complete. Restarting loop..."
           done
