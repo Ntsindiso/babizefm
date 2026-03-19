@@ -1,4 +1,4 @@
-name: 24/7 Babize FM - Pro DJ Crossfade
+name: 24/7 Babize FM - Smart Vibe Switcher
 
 on:
   workflow_dispatch:
@@ -15,42 +15,55 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Start Crossfade Stream
+      - name: Start Smart-Switching Stream
         run: |
-          # 1. Get SA Time
-          HOUR=$(date -u -d "+2 hours" +%H)
-          echo "Current SA Hour: $HOUR"
+          while true; do
+            # 1. Get current SA Hour (UTC+2)
+            HOUR=$(date -u -d "+2 hours" +%H)
+            echo "Time Check: $HOUR:00 - Deciding vibe..."
 
-          # 2. Pick Folder
-          if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
-            FOLDER="./Music/Morning"
-          elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
-            FOLDER="./Music/Midday"
-          else
-            FOLDER="./Music/Night"
-          fi
-
-          # 3. Create a list of files for the DJ filter
-          # This handles spaces in names perfectly
-          files=$(find "$FOLDER" -iname "*.mp3" | shuf)
-          
-          # 4. Build the Crossfade Command
-          # This filter overlaps songs by 5000ms (5 seconds)
-          filter=""
-          inputs=""
-          count=0
-          for f in $files; do
-            inputs="$inputs -i \"$f\""
-            if [ $count -eq 0 ]; then
-              filter="[0:a]"
+            # 2. Assign folder based on time
+            if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
+              FOLDER="./Music/Morning"
+              VIBE="Morning Energy"
+            elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
+              FOLDER="./Music/Midday"
+              VIBE="Midday Focus"
             else
-              filter="${filter}[$count:a]acrossfade=d=5:c1=tri:c2=tri[a${count}];[a${count}]"
+              FOLDER="./Music/Night"
+              VIBE="Night Chill"
             fi
-            count=$((count+1))
-          done
-          
-          # Remove the last semicolon and map the final output
-          filter=$(echo $filter | sed 's/;\[a[0-9]*\]$//')
 
-          # 5. Push the stream to Zeno.fm
-          eval "ffmpeg -re $inputs -filter_complex \"$filter\" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}"
+            echo "Current Vibe: $VIBE"
+
+            # 3. Pick 3 random songs from that folder
+            files=$(find "$FOLDER" -iname "*.mp3" | shuf -n 3)
+            
+            # Check if files exist, otherwise fallback to main Music
+            if [ -z "$files" ]; then
+              files=$(find "./Music" -iname "*.mp3" | shuf -n 3)
+            fi
+
+            # 4. Build the Crossfade filter for these 3 tracks
+            filter=""
+            inputs=""
+            count=0
+            # Use a while loop to handle filenames with spaces safely
+            while read -r f; do
+              inputs="$inputs -i \"$f\""
+              if [ $count -eq 0 ]; then
+                filter="[0:a]"
+              else
+                filter="${filter}[$count:a]acrossfade=d=5:c1=tri:c2=tri[a${count}];[a${count}]"
+              fi
+              count=$((count+1))
+            done <<< "$files"
+            
+            filter=$(echo $filter | sed 's/;\[a[0-9]*\]$//')
+
+            # 5. Stream the 3-song set to Zeno.fm
+            echo "Starting 3-song set..."
+            eval "ffmpeg -re $inputs -filter_complex \"$filter\" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}"
+            
+            echo "Set finished. Re-checking clock for next vibe..."
+          done
