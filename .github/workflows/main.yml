@@ -1,9 +1,9 @@
-name: 24/7 Babize FM - Time-Aware Automation
+name: 24/7 Babize FM - Pro DJ Crossfade
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *' # The necessary GitHub reset
+    - cron: '0 */6 * * *'
 
 jobs:
   stream:
@@ -15,53 +15,42 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Start Scheduled Streaming
+      - name: Start Crossfade Stream
         run: |
-          # Infinite Loop
-          while true; do
-            # 1. Look up SA Time (UTC+2)
-            HOUR=$(date -u -d "+2 hours" +%H)
-            echo "Current SA Hour: $HOUR"
+          # 1. Get SA Time
+          HOUR=$(date -u -d "+2 hours" +%H)
+          echo "Current SA Hour: $HOUR"
 
-            # 2. Pick the matching capitalized folder
-            if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
-              FOLDER="./Music/Morning"
-            elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
-              FOLDER="./Music/Midday"
+          # 2. Pick Folder
+          if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
+            FOLDER="./Music/Morning"
+          elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
+            FOLDER="./Music/Midday"
+          else
+            FOLDER="./Music/Night"
+          fi
+
+          # 3. Create a list of files for the DJ filter
+          # This handles spaces in names perfectly
+          files=$(find "$FOLDER" -iname "*.mp3" | shuf)
+          
+          # 4. Build the Crossfade Command
+          # This filter overlaps songs by 5000ms (5 seconds)
+          filter=""
+          inputs=""
+          count=0
+          for f in $files; do
+            inputs="$inputs -i \"$f\""
+            if [ $count -eq 0 ]; then
+              filter="[0:a]"
             else
-              FOLDER="./Music/Night"
+              filter="${filter}[$count:a]acrossfade=d=5:c1=tri:c2=tri[a${count}];[a${count}]"
             fi
-
-            echo "Airing Vibe from: $FOLDER"
-
-            # 3. Find and shuffle the playlist for this vibe
-            find "$FOLDER" -iname "*.mp3" > playlist.txt
-            
-            if [ ! -s playlist.txt ]; then
-              echo "ERROR: No music found in $FOLDER. Checking root Music folder."
-              find "./Music" -iname "*.mp3" > playlist.txt
-            fi
-
-            shuf playlist.txt -o playlist.txt
-
-            # 4. Stream 5 songs from the vibe, then play a jingle and re-check time
-            TRACK_COUNT=0
-            while IFS= read -r line; do
-              # Break after 5 tracks to re-evaluate the time slot
-              if [ $TRACK_COUNT -ge 5 ]; then
-                break
-              fi
-
-              # Optional: Uncomment these lines if you have a Jingle folder
-              # echo "Airing Babize ID Jingle"
-              # JINGLE=$(find "./Jingles" -iname "*.mp3" | shuf -n 1)
-              # ffmpeg -re -i "$JINGLE" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
-
-              echo "Airing Track: $line"
-              ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
-              
-              TRACK_COUNT=$((TRACK_COUNT+1))
-            done < playlist.txt
-            
-            echo "Vibe check complete. Restarting loop..."
+            count=$((count+1))
           done
+          
+          # Remove the last semicolon and map the final output
+          filter=$(echo $filter | sed 's/;\[a[0-9]*\]$//')
+
+          # 5. Push the stream to Zeno.fm
+          eval "ffmpeg -re $inputs -filter_complex \"$filter\" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}"
