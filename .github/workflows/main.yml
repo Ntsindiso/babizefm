@@ -3,7 +3,7 @@ name: 24/7 Babize FM Stream
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *' # Restarts every 6 hours to stay live
+    - cron: '0 */6 * * *'
 
 jobs:
   stream:
@@ -17,10 +17,13 @@ jobs:
 
       - name: Start Streaming
         run: |
-          # This command finds all mp3s in your Music folder, 
-          # shuffles them, and streams them while ignoring spaces in names.
-          find ./Music -name "*.mp3" | shuf > playlist.txt
+          # This finds all MP3s and handles spaces perfectly
+          find ./Music -name "*.mp3" > playlist.txt
           
-          while read -r line; do
+          # Shuffle the list so it's not the same every time
+          shuf playlist.txt -o playlist.txt
+
+          while IFS= read -r line; do
+            echo "Now playing: $line"
             ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
           done < playlist.txt
