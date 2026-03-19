@@ -1,9 +1,9 @@
-name: 24/7 Babize FM Stream
+name: 24/7 Babize FM Scheduled Stream
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */1 * * *' # Restarts every hour to check if the "Time Zone" has changed
 
 jobs:
   stream:
@@ -15,14 +15,29 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Start Streaming
+      - name: Start Scheduled Streaming
         run: |
-          # This finds all MP3s and handles spaces perfectly
-          find ./Music -name "*.mp3" > playlist.txt
-          
-          # Shuffle the list so it's not the same every time
+          # 1. Get current hour in South Africa (UTC+2)
+          HOUR=$(date -u -d "+2 hours" +%H)
+          echo "Current South African Hour: $HOUR"
+
+          # 2. Decide which folder to play based on the time
+          if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
+            FOLDER="./Music/Morning"
+            echo "Vibe: Morning Energy"
+          elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
+            FOLDER="./Music/Midday"
+            echo "Vibe: Midday Focus"
+          else
+            FOLDER="./Music/Night"
+            echo "Vibe: Night Chill"
+          fi
+
+          # 3. Find MP3s in that specific folder and shuffle them
+          find "$FOLDER" -name "*.mp3" > playlist.txt
           shuf playlist.txt -o playlist.txt
 
+          # 4. Loop through the playlist
           while IFS= read -r line; do
             echo "Now playing: $line"
             ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
