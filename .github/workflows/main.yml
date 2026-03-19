@@ -12,9 +12,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install FFmpeg (Quick)
-        # We remove 'sudo apt-get update' to save 5+ minutes of waiting
-        run: sudo apt install -y ffmpeg
+      - name: Install FFmpeg
+        # The '-qq' makes it quiet and '-y' forces it to say YES to everything
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
 
       - name: Start Smart-Switching Stream
         run: |
@@ -29,17 +29,16 @@ jobs:
               FOLDER="./Music/Night"
             fi
 
-            echo "Current Vibe: $FOLDER"
+            echo "Current Vibe Folder: $FOLDER"
 
-            # Pick 3 random songs
+            # Pick 3 random songs and handle spaces
             files=$(find "$FOLDER" -iname "*.mp3" | shuf -n 3)
             
             if [ -z "$files" ]; then
-              echo "Checking root Music folder as fallback..."
+              echo "Searching root Music folder..."
               files=$(find "./Music" -iname "*.mp3" | shuf -n 3)
             fi
 
-            # Build the Crossfade filter
             filter=""
             inputs=""
             count=0
@@ -56,6 +55,6 @@ jobs:
             
             filter=$(echo $filter | sed 's/;\[a[0-9]*\]$//')
 
-            # Stream to Zeno.fm
+            echo "Now Airing onto Zeno.fm..."
             eval "ffmpeg -re $inputs -filter_complex \"$filter\" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}"
           done
