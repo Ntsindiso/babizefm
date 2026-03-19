@@ -12,44 +12,39 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install FFmpeg (Quick)
+        # We remove 'sudo apt-get update' to save 5+ minutes of waiting
+        run: sudo apt install -y ffmpeg
 
       - name: Start Smart-Switching Stream
         run: |
           while true; do
-            # 1. Get current SA Hour (UTC+2)
             HOUR=$(date -u -d "+2 hours" +%H)
-            echo "Time Check: $HOUR:00 - Deciding vibe..."
-
-            # 2. Assign folder based on time
+            
             if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
               FOLDER="./Music/Morning"
-              VIBE="Morning Energy"
             elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
               FOLDER="./Music/Midday"
-              VIBE="Midday Focus"
             else
               FOLDER="./Music/Night"
-              VIBE="Night Chill"
             fi
 
-            echo "Current Vibe: $VIBE"
+            echo "Current Vibe: $FOLDER"
 
-            # 3. Pick 3 random songs from that folder
+            # Pick 3 random songs
             files=$(find "$FOLDER" -iname "*.mp3" | shuf -n 3)
             
-            # Check if files exist, otherwise fallback to main Music
             if [ -z "$files" ]; then
+              echo "Checking root Music folder as fallback..."
               files=$(find "./Music" -iname "*.mp3" | shuf -n 3)
             fi
 
-            # 4. Build the Crossfade filter for these 3 tracks
+            # Build the Crossfade filter
             filter=""
             inputs=""
             count=0
-            # Use a while loop to handle filenames with spaces safely
             while read -r f; do
+              [ -z "$f" ] && continue
               inputs="$inputs -i \"$f\""
               if [ $count -eq 0 ]; then
                 filter="[0:a]"
@@ -61,9 +56,6 @@ jobs:
             
             filter=$(echo $filter | sed 's/;\[a[0-9]*\]$//')
 
-            # 5. Stream the 3-song set to Zeno.fm
-            echo "Starting 3-song set..."
+            # Stream to Zeno.fm
             eval "ffmpeg -re $inputs -filter_complex \"$filter\" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}"
-            
-            echo "Set finished. Re-checking clock for next vibe..."
           done
