@@ -1,4 +1,4 @@
-name: 24/7 Babize FM - Simple Vibe Switcher
+name: 24/7 Babize FM - Self-Healing Stream
 
 on:
   workflow_dispatch:
@@ -11,19 +11,21 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Install FFmpeg
-        # This is the simplest, fastest way to install it
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Start Scheduled Streaming
         run: |
           while true; do
-            # 1. Check South African Time
-            HOUR=$(date -u -d "+2 hours" +%H)
-            echo "Current Hour: $HOUR"
+            # 1. Update the folder list to see NEW songs you just uploaded
+            git pull origin main || echo "No new updates found"
 
-            # 2. Pick the folder (Capitalized to match your repo)
+            # 2. Check SA Time
+            HOUR=$(date -u -d "+2 hours" +%H)
+            
             if [ "$HOUR" -ge 05 ] && [ "$HOUR" -lt 12 ]; then
               FOLDER="./Music/Morning"
             elif [ "$HOUR" -ge 12 ] && [ "$HOUR" -lt 18 ]; then
@@ -32,22 +34,18 @@ jobs:
               FOLDER="./Music/Night"
             fi
 
-            echo "Targeting Folder: $FOLDER"
-
-            # 3. Find 3 random songs from that specific folder
-            # If the folder is empty, it will check the main Music folder
+            # 3. Pick 3 random songs
             files=$(find "$FOLDER" -iname "*.mp3" | shuf -n 3)
             
             if [ -z "$files" ]; then
               files=$(find "./Music" -iname "*.mp3" | shuf -n 3)
             fi
 
-            # 4. Play those 3 songs one-by-one (Simple & Reliable)
+            # 4. Play songs (with error handling)
             while read -r line; do
               [ -z "$line" ] && continue
               echo "Now Airing: $line"
-              ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }}
+              # We added '|| true' so if one song crashes, the radio stays ALIVE
+              ffmpeg -re -i "$line" -c:a libmp3lame -b:a 128k -f mp3 icecast://source:${{ secrets.ZENO_KEY }}@${{ secrets.ZENO_URL }} || echo "Song failed, skipping..."
             done <<< "$files"
-            
-            echo "Set finished. Checking clock again..."
           done
